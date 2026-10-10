@@ -1,4 +1,4 @@
-import json, os, subprocess, time, tkinter as tk, urllib.error, urllib.request
+import ctypes, json, os, subprocess, sys, time, tkinter as tk, urllib.error, urllib.request
 from datetime import datetime
 
 CREDS = os.path.expanduser("~/.claude/.credentials.json")
@@ -47,6 +47,39 @@ root.attributes("-topmost", True)
 root.attributes("-alpha", 0.92)
 root.configure(bg=BG)
 root.geometry("+40+40")
+root.title("Claude Usage")
+root.iconbitmap(os.path.join(getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))), "icon.ico"))
+
+
+def show_in_taskbar():
+    # overrideredirect windows get no taskbar button; WS_EX_APPWINDOW forces one
+    hwnd = ctypes.windll.user32.GetParent(root.winfo_id())
+    style = ctypes.windll.user32.GetWindowLongW(hwnd, -20)
+    ctypes.windll.user32.SetWindowLongW(hwnd, -20, (style & ~0x80) | 0x40000)
+    root.withdraw()
+    root.after(10, root.deiconify)
+
+
+def minimize():
+    # iconify() is ignored while overrideredirect is on
+    root.overrideredirect(False)
+    root.iconify()
+
+
+def restore_frameless():
+    # overrideredirect(False) itself triggers a Map, so only act once the window is really back to normal
+    if not root.overrideredirect() and root.state() == "normal":
+        root.overrideredirect(True)
+        root.after(10, show_in_taskbar)
+
+
+def on_map(e):
+    if e.widget is root:
+        root.after(100, restore_frameless)
+
+
+root.bind("<Map>", on_map)
+root.after(100, show_in_taskbar)
 
 header = tk.Frame(root, bg=BG)
 header.grid(row=0, column=0, columnspan=2, sticky="ew")
@@ -146,6 +179,7 @@ def render():
 
 
 tk.Button(header, text="✕", command=root.destroy, bg=BG, fg="#9a9a95", activebackground="#c0392b", activeforeground="white", relief="flat", bd=0, font=("Segoe UI", 9)).pack(side="right", padx=4)
+tk.Button(header, text="—", command=minimize, bg=BG, fg="#9a9a95", activebackground=ACCENT, activeforeground="white", relief="flat", bd=0, font=("Segoe UI", 9)).pack(side="right")
 sync_btn = tk.Button(header, text="⟳", command=refresh, bg=BG, fg="#9a9a95", activebackground=ACCENT, activeforeground="white", relief="flat", bd=0, font=("Segoe UI", 10))
 sync_btn.pack(side="right", padx=(0, 4))
 
