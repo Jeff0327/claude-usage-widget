@@ -1,15 +1,17 @@
-import json, os, subprocess, tkinter as tk, urllib.error, urllib.request
+import json, os, subprocess, time, tkinter as tk, urllib.error, urllib.request
 from datetime import datetime
 
 CREDS = os.path.expanduser("~/.claude/.credentials.json")
 SETTINGS = os.path.expanduser("~/.claude-usage-widget.json")
 TEXT = {
-    "en": dict(code="EN", five_hour="5-hour session", seven_day="Weekly", resets="Resets", offline="Offline", signin="Sign in required", login="Log in", logout="Log out"),
-    "ru": dict(code="RU", five_hour="Сессия 5 ч", seven_day="Неделя", resets="Сброс", offline="Нет сети", signin="Нужен вход", login="Войти", logout="Выйти"),
-    "ko": dict(code="KO", five_hour="5시간 세션", seven_day="주간", resets="리셋", offline="오프라인", signin="로그인 필요", login="로그인", logout="로그아웃"),
-    "zh": dict(code="ZH", five_hour="5小时会话", seven_day="每周", resets="重置", offline="离线", signin="需要登录", login="登录", logout="退出登录"),
+    "en": dict(limited="Rate limited", code="EN", five_hour="5-hour session", seven_day="Weekly", resets="Resets", offline="Offline", signin="Sign in required", login="Log in", logout="Log out"),
+    "ru": dict(limited="Лимит запросов", code="RU", five_hour="Сессия 5 ч", seven_day="Неделя", resets="Сброс", offline="Нет сети", signin="Нужен вход", login="Войти", logout="Выйти"),
+    "ko": dict(limited="요청 제한", code="KO", five_hour="5시간 세션", seven_day="주간", resets="리셋", offline="오프라인", signin="로그인 필요", login="로그인", logout="로그아웃"),
+    "zh": dict(limited="请求受限", code="ZH", five_hour="5小时会话", seven_day="每周", resets="重置", offline="离线", signin="需要登录", login="登录", logout="退出登录"),
 }
-REFRESH_MS = 60_000
+# Measured: calls 180s apart never hit 429 (5/5); 30s apart hit it on the 3rd call.
+REFRESH_MS = 300_000
+MIN_GAP = 60
 BG, RING_BG, ACCENT = "#1f1f1e", "#3a3a38", "#d97757"
 SIZE, W = 96, 12
 lang = json.load(open(SETTINGS))["lang"] if os.path.exists(SETTINGS) else "en"
@@ -68,7 +70,9 @@ logged_in = False
 
 def toggle_auth():
     if logged_in:
+        global next_ok
         subprocess.run(["claude", "auth", "logout"], creationflags=subprocess.CREATE_NO_WINDOW)
+        next_ok = 0
         refresh()
     else:
         subprocess.Popen(["claude", "auth", "login"], creationflags=subprocess.CREATE_NEW_CONSOLE)
@@ -90,15 +94,32 @@ def next_lang():
     render()
 
 
+next_ok = 0
+
+
 def refresh():
-    global job
+    global job, next_ok
+    if time.monotonic() < next_ok:
+        return
     root.after_cancel(job) if job else None
-    job = root.after(REFRESH_MS, refresh)
+    wait = MIN_GAP
+    delay = REFRESH_MS
     try:
         state.update(usage=fetch_usage(), error=False)
-    except urllib.error.URLError:
-        state.update(error=True)
+    except urllib.error.URLError as e:
+        state.update(error="limited" if isinstance(e, urllib.error.HTTPError) and e.code == 429 else True)
+        if state["error"] == "limited":
+            wait = max(int(e.headers["Retry-After"]), REFRESH_MS // 1000)
+            delay = wait * 1000
+    next_ok = time.monotonic() + wait
+    job = root.after(delay, refresh)
     render()
+
+
+def tick():
+    left = int(next_ok - time.monotonic())
+    sync_btn.config(text=f"⟳ {left}" if left > 0 else "⟳", state="disabled" if left > 0 else "normal")
+    root.after(1000, tick)
 
 
 def render():
@@ -114,18 +135,19 @@ def render():
             c.itemconfig(arc, extent=0)
             c.itemconfig(center, text="--")
             c.itemconfig(sub, text="")
-            c.itemconfig(when, text=T["offline"] if state["error"] else T["signin"])
+            c.itemconfig(when, text=(T["limited"] if state["error"] == "limited" else T["offline"]) if state["error"] else T["signin"])
             continue
         pct = usage[key]["utilization"]
         left, at = reset_text(usage[key]["resets_at"])
         c.itemconfig(arc, extent=-min(pct / 100, 0.9999) * 360, outline="#c0392b" if pct >= 90 else ACCENT)
         c.itemconfig(center, text=f"{pct:.0f}%")
         c.itemconfig(sub, text=left)
-        c.itemconfig(when, text=T["offline"] if state["error"] else f"{T['resets']} {at}")
+        c.itemconfig(when, text=(T["limited"] if state["error"] == "limited" else T["offline"]) if state["error"] else f"{T['resets']} {at}")
 
 
 tk.Button(header, text="✕", command=root.destroy, bg=BG, fg="#9a9a95", activebackground="#c0392b", activeforeground="white", relief="flat", bd=0, font=("Segoe UI", 9)).pack(side="right", padx=4)
-tk.Button(header, text="⟳", command=refresh, bg=BG, fg="#9a9a95", activebackground=ACCENT, activeforeground="white", relief="flat", bd=0, font=("Segoe UI", 10)).pack(side="right", padx=(0, 4))
+sync_btn = tk.Button(header, text="⟳", command=refresh, bg=BG, fg="#9a9a95", activebackground=ACCENT, activeforeground="white", relief="flat", bd=0, font=("Segoe UI", 10))
+sync_btn.pack(side="right", padx=(0, 4))
 
 lang_btn = tk.Button(header, command=next_lang, bg=BG, fg="#9a9a95", activebackground=ACCENT, activeforeground="white", relief="flat", bd=0, font=("Segoe UI", 8, "bold"))
 lang_btn.pack(side="right")
@@ -134,5 +156,6 @@ drag = {}
 root.bind("<ButtonPress-1>", lambda e: drag.update(x=e.x, y=e.y))
 root.bind("<B1-Motion>", lambda e: root.geometry(f"+{root.winfo_x()+e.x-drag['x']}+{root.winfo_y()+e.y-drag['y']}"))
 
+tick()
 refresh()
 root.mainloop()
