@@ -41,7 +41,7 @@ root.geometry("+40+40")
 header = tk.Frame(root, bg=BG)
 header.grid(row=0, column=0, columnspan=2, sticky="ew")
 donuts = {}
-for col, (key, title) in enumerate([("five_hour", "5시간 세션"), ("seven_day", "주간")]):
+for col, (key, title) in enumerate([("five_hour", "5-hour session"), ("seven_day", "Weekly")]):
     c = tk.Canvas(root, width=SIZE + 16, height=SIZE + 58, bg=BG, highlightthickness=0)
     c.grid(row=1, column=col, padx=4, pady=(0, 8))
     box = (8 + W / 2, 8 + W / 2, 8 + SIZE - W / 2, 8 + SIZE - W / 2)
@@ -65,8 +65,8 @@ def toggle_auth():
         subprocess.Popen(["claude", "auth", "login"], creationflags=subprocess.CREATE_NEW_CONSOLE)
 
 
-auth_btn = tk.Button(root, command=toggle_auth, fg="white", relief="flat", font=("Malgun Gothic", 9, "bold"))
-auth_btn.grid(row=2, column=0, columnspan=2, pady=(0, 8))
+auth_btn = tk.Button(header, command=toggle_auth, fg="white", relief="flat", bd=0, padx=8, font=("Segoe UI", 8, "bold"))
+auth_btn.pack(side="left", padx=6, pady=4)
 
 
 job = None
@@ -80,16 +80,16 @@ def refresh():
         usage = fetch_usage()
     except urllib.error.URLError:
         for c, arc, center, sub, when in donuts.values():
-            c.itemconfig(when, text="연결 실패")
+            c.itemconfig(when, text="Offline")
         return
     logged_in = usage is not None
-    auth_btn.config(text="로그아웃" if logged_in else "Claude 로그인", bg="#3a3a38" if logged_in else ACCENT)
+    auth_btn.config(text="Log out" if logged_in else "Log in", bg="#3a3a38" if logged_in else ACCENT)
     if usage is None:
         for c, arc, center, sub, when in donuts.values():
             c.itemconfig(arc, extent=0)
             c.itemconfig(center, text="--")
             c.itemconfig(sub, text="")
-            c.itemconfig(when, text="로그인 필요")
+            c.itemconfig(when, text="Sign in required")
     else:
         for key, (c, arc, center, sub, when) in donuts.items():
             pct = usage[key]["utilization"]
@@ -97,7 +97,7 @@ def refresh():
             c.itemconfig(arc, extent=-min(pct / 100, 0.9999) * 360, outline="#c0392b" if pct >= 90 else ACCENT)
             c.itemconfig(center, text=f"{pct:.0f}%")
             c.itemconfig(sub, text=left)
-            c.itemconfig(when, text=f"리셋 {at}")
+            c.itemconfig(when, text=f"Resets {at}")
 
 
 tk.Button(header, text="✕", command=root.destroy, bg=BG, fg="#9a9a95", activebackground="#c0392b", activeforeground="white", relief="flat", bd=0, font=("Segoe UI", 9)).pack(side="right", padx=4)
