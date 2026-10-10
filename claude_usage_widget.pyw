@@ -2,9 +2,17 @@ import json, os, subprocess, tkinter as tk, urllib.error, urllib.request
 from datetime import datetime
 
 CREDS = os.path.expanduser("~/.claude/.credentials.json")
+SETTINGS = os.path.expanduser("~/.claude-usage-widget.json")
+TEXT = {
+    "en": dict(code="EN", five_hour="5-hour session", seven_day="Weekly", resets="Resets", offline="Offline", signin="Sign in required", login="Log in", logout="Log out"),
+    "ru": dict(code="RU", five_hour="Сессия 5 ч", seven_day="Неделя", resets="Сброс", offline="Нет сети", signin="Нужен вход", login="Войти", logout="Выйти"),
+    "ko": dict(code="KO", five_hour="5시간 세션", seven_day="주간", resets="리셋", offline="오프라인", signin="로그인 필요", login="로그인", logout="로그아웃"),
+    "zh": dict(code="ZH", five_hour="5小时会话", seven_day="每周", resets="重置", offline="离线", signin="需要登录", login="登录", logout="退出登录"),
+}
 REFRESH_MS = 60_000
 BG, RING_BG, ACCENT = "#1f1f1e", "#3a3a38", "#d97757"
 SIZE, W = 96, 12
+lang = json.load(open(SETTINGS))["lang"] if os.path.exists(SETTINGS) else "en"
 
 
 def fetch_usage():
@@ -41,7 +49,8 @@ root.geometry("+40+40")
 header = tk.Frame(root, bg=BG)
 header.grid(row=0, column=0, columnspan=2, sticky="ew")
 donuts = {}
-for col, (key, title) in enumerate([("five_hour", "5-hour session"), ("seven_day", "Weekly")]):
+titles = {}
+for col, key in enumerate(["five_hour", "seven_day"]):
     c = tk.Canvas(root, width=SIZE + 16, height=SIZE + 58, bg=BG, highlightthickness=0)
     c.grid(row=1, column=col, padx=4, pady=(0, 8))
     box = (8 + W / 2, 8 + W / 2, 8 + SIZE - W / 2, 8 + SIZE - W / 2)
@@ -49,7 +58,7 @@ for col, (key, title) in enumerate([("five_hour", "5-hour session"), ("seven_day
     arc = c.create_arc(*box, start=90, extent=0, style="arc", outline=ACCENT, width=W)
     center = c.create_text(8 + SIZE / 2, 8 + SIZE / 2 - 6, fill="#f0eee6", font=("Consolas", 16, "bold"))
     sub = c.create_text(8 + SIZE / 2, 8 + SIZE / 2 + 14, fill="#9a9a95", font=("Malgun Gothic", 8))
-    c.create_text(8 + SIZE / 2, SIZE + 22, text=title, fill="#f0eee6", font=("Malgun Gothic", 9, "bold"))
+    titles[key] = (c, c.create_text(8 + SIZE / 2, SIZE + 22, fill="#f0eee6", font=("Malgun Gothic", 9, "bold")))
     when = c.create_text(8 + SIZE / 2, SIZE + 40, fill="#9a9a95", font=("Malgun Gothic", 8))
     donuts[key] = (c, arc, center, sub, when)
 
@@ -72,6 +81,21 @@ auth_btn.pack(side="left", padx=6, pady=4)
 job = None
 
 
+def set_lang():
+    for key, (c, item) in titles.items():
+        c.itemconfig(item, text=TEXT[lang][key])
+    lang_btn.config(text=TEXT[lang]["code"])
+
+
+def next_lang():
+    global lang
+    codes = list(TEXT)
+    lang = codes[(codes.index(lang) + 1) % len(codes)]
+    json.dump({"lang": lang}, open(SETTINGS, "w"))
+    set_lang()
+    refresh()
+
+
 def refresh():
     global job, logged_in
     root.after_cancel(job) if job else None
@@ -80,16 +104,16 @@ def refresh():
         usage = fetch_usage()
     except urllib.error.URLError:
         for c, arc, center, sub, when in donuts.values():
-            c.itemconfig(when, text="Offline")
+            c.itemconfig(when, text=TEXT[lang]["offline"])
         return
     logged_in = usage is not None
-    auth_btn.config(text="Log out" if logged_in else "Log in", bg="#3a3a38" if logged_in else ACCENT)
+    auth_btn.config(text=TEXT[lang]["logout" if logged_in else "login"], bg="#3a3a38" if logged_in else ACCENT)
     if usage is None:
         for c, arc, center, sub, when in donuts.values():
             c.itemconfig(arc, extent=0)
             c.itemconfig(center, text="--")
             c.itemconfig(sub, text="")
-            c.itemconfig(when, text="Sign in required")
+            c.itemconfig(when, text=TEXT[lang]["signin"])
     else:
         for key, (c, arc, center, sub, when) in donuts.items():
             pct = usage[key]["utilization"]
@@ -97,11 +121,15 @@ def refresh():
             c.itemconfig(arc, extent=-min(pct / 100, 0.9999) * 360, outline="#c0392b" if pct >= 90 else ACCENT)
             c.itemconfig(center, text=f"{pct:.0f}%")
             c.itemconfig(sub, text=left)
-            c.itemconfig(when, text=f"Resets {at}")
+            c.itemconfig(when, text=f"{TEXT[lang]['resets']} {at}")
 
 
 tk.Button(header, text="✕", command=root.destroy, bg=BG, fg="#9a9a95", activebackground="#c0392b", activeforeground="white", relief="flat", bd=0, font=("Segoe UI", 9)).pack(side="right", padx=4)
 tk.Button(header, text="⟳", command=refresh, bg=BG, fg="#9a9a95", activebackground=ACCENT, activeforeground="white", relief="flat", bd=0, font=("Segoe UI", 10)).pack(side="right", padx=(0, 4))
+
+lang_btn = tk.Button(header, command=next_lang, bg=BG, fg="#9a9a95", activebackground=ACCENT, activeforeground="white", relief="flat", bd=0, font=("Segoe UI", 8, "bold"))
+lang_btn.pack(side="right")
+set_lang()
 
 drag = {}
 root.bind("<ButtonPress-1>", lambda e: drag.update(x=e.x, y=e.y))

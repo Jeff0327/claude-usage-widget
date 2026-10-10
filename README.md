@@ -5,6 +5,7 @@ A tiny always-on-top Windows desktop widget that shows your Claude plan usage (5
 - Shows your account's real usage percentage and reset time (the same numbers as `/usage` in Claude Code).
 - Auto-refreshes every 60 seconds; the ⟳ button syncs immediately, ✕ closes the widget, drag to move.
 - Log in / log out from inside the widget (top-left button).
+- Four languages (English, Russian, Korean, Chinese): click the language code (EN/RU/KO/ZH) in the header to cycle. The choice is saved to `~/.claude-usage-widget.json`.
 
 ## Requirements
 
