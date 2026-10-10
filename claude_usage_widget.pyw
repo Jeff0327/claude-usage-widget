@@ -8,7 +8,7 @@ SIZE, W = 96, 12
 
 
 def fetch_usage():
-    """로그인 안 됐거나 토큰이 만료됐으면 None."""
+    """Returns None when logged out or the token has expired."""
     if not os.path.exists(CREDS):
         return None
     token = json.load(open(CREDS, encoding="utf-8"))["claudeAiOauth"]["accessToken"]
