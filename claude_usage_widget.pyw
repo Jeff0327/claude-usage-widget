@@ -79,12 +79,7 @@ auth_btn.pack(side="left", padx=6, pady=4)
 
 
 job = None
-
-
-def set_lang():
-    for key, (c, item) in titles.items():
-        c.itemconfig(item, text=TEXT[lang][key])
-    lang_btn.config(text=TEXT[lang]["code"])
+state = dict(usage=None, error=False)
 
 
 def next_lang():
@@ -92,36 +87,41 @@ def next_lang():
     codes = list(TEXT)
     lang = codes[(codes.index(lang) + 1) % len(codes)]
     json.dump({"lang": lang}, open(SETTINGS, "w"))
-    set_lang()
-    refresh()
+    render()
 
 
 def refresh():
-    global job, logged_in
+    global job
     root.after_cancel(job) if job else None
     job = root.after(REFRESH_MS, refresh)
     try:
-        usage = fetch_usage()
+        state.update(usage=fetch_usage(), error=False)
     except urllib.error.URLError:
-        for c, arc, center, sub, when in donuts.values():
-            c.itemconfig(when, text=TEXT[lang]["offline"])
-        return
-    logged_in = usage is not None
-    auth_btn.config(text=TEXT[lang]["logout" if logged_in else "login"], bg="#3a3a38" if logged_in else ACCENT)
-    if usage is None:
-        for c, arc, center, sub, when in donuts.values():
+        state.update(error=True)
+    render()
+
+
+def render():
+    global logged_in
+    usage = state["usage"]
+    logged_in = usage is not None or (state["error"] and os.path.exists(CREDS))
+    T = TEXT[lang]
+    lang_btn.config(text=T["code"])
+    auth_btn.config(text=T["logout" if logged_in else "login"], bg="#3a3a38" if logged_in else ACCENT)
+    for key, (c, arc, center, sub, when) in donuts.items():
+        titles[key][0].itemconfig(titles[key][1], text=T[key])
+        if usage is None:
             c.itemconfig(arc, extent=0)
             c.itemconfig(center, text="--")
             c.itemconfig(sub, text="")
-            c.itemconfig(when, text=TEXT[lang]["signin"])
-    else:
-        for key, (c, arc, center, sub, when) in donuts.items():
-            pct = usage[key]["utilization"]
-            left, at = reset_text(usage[key]["resets_at"])
-            c.itemconfig(arc, extent=-min(pct / 100, 0.9999) * 360, outline="#c0392b" if pct >= 90 else ACCENT)
-            c.itemconfig(center, text=f"{pct:.0f}%")
-            c.itemconfig(sub, text=left)
-            c.itemconfig(when, text=f"{TEXT[lang]['resets']} {at}")
+            c.itemconfig(when, text=T["offline"] if state["error"] else T["signin"])
+            continue
+        pct = usage[key]["utilization"]
+        left, at = reset_text(usage[key]["resets_at"])
+        c.itemconfig(arc, extent=-min(pct / 100, 0.9999) * 360, outline="#c0392b" if pct >= 90 else ACCENT)
+        c.itemconfig(center, text=f"{pct:.0f}%")
+        c.itemconfig(sub, text=left)
+        c.itemconfig(when, text=T["offline"] if state["error"] else f"{T['resets']} {at}")
 
 
 tk.Button(header, text="✕", command=root.destroy, bg=BG, fg="#9a9a95", activebackground="#c0392b", activeforeground="white", relief="flat", bd=0, font=("Segoe UI", 9)).pack(side="right", padx=4)
@@ -129,7 +129,6 @@ tk.Button(header, text="⟳", command=refresh, bg=BG, fg="#9a9a95", activebackgr
 
 lang_btn = tk.Button(header, command=next_lang, bg=BG, fg="#9a9a95", activebackground=ACCENT, activeforeground="white", relief="flat", bd=0, font=("Segoe UI", 8, "bold"))
 lang_btn.pack(side="right")
-set_lang()
 
 drag = {}
 root.bind("<ButtonPress-1>", lambda e: drag.update(x=e.x, y=e.y))
